@@ -108,6 +108,7 @@ func main() {
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
 	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
+	ethOrchAddr := flag.String("ethOrchAddr", "", "ETH address of an on-chain registered orchestrator")
 	ethUrl := flag.String("ethUrl", "", "Ethereum node JSON-RPC URL")
 	ethController := flag.String("ethController", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
@@ -513,8 +514,14 @@ func main() {
 				RedeemGas:        redeemGas,
 				TxCostMultiplier: txCostMultiplier,
 			}
+			// By default the ticket recipient is the node's address
+			// If the address of an on-chain registered orchestrator is provided, then it should be specified as the ticket recipient
+			recipientAddr := n.Eth.Account().Address
+			if *ethOrchAddr != "" {
+				recipientAddr = ethcommon.HexToAddress(*ethOrchAddr)
+			}
 			n.Recipient, err = pm.NewRecipient(
-				n.Eth.Account().Address,
+				recipientAddr,
 				n.Eth,
 				validator,
 				n.Database,
@@ -531,17 +538,21 @@ func main() {
 			n.Recipient.Start()
 			defer n.Recipient.Stop()
 
-			// Create round iniitializer to automatically initialize new rounds
-			if *initializeRound {
-				initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
-				go initializer.Start()
-				defer initializer.Stop()
-			}
+			// Only initialize rounds and call reward if the node is using an on-chain registered orchestrator address
+			// Assume that the node is using an on-chain registered orchestrator address if -ethOrchAddr is not specified
+			if *ethOrchAddr == "" || n.Eth.Account().Address == ethcommon.HexToAddress(*ethOrchAddr) {
+				// Create round iniitializer to automatically initialize new rounds
+				if *initializeRound {
+					initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
+					go initializer.Start()
+					defer initializer.Stop()
+				}
 
-			// Create reward service to claim/distribute inflationary rewards every round
-			rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
-			rs.Start(ctx)
-			defer rs.Stop()
+				// Create reward service to claim/distribute inflationary rewards every round
+				rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
+				rs.Start(ctx)
+				defer rs.Stop()
+			}
 		}
 
 		if n.NodeType == core.BroadcasterNode {

@@ -160,8 +160,11 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 	}
 
 	addrs := make([]ethcommon.Address, len(s.unknownSessions))
+	addrMap := make(map[ethcommon.Address]int)
 	for i, sess := range s.unknownSessions {
-		addrs[i] = ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient)
+		addr := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient)
+		addrs[i] = addr
+		addrMap[addr]++
 	}
 
 	// Fetch stake weights for all addresses
@@ -190,8 +193,11 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 	// The greater the stake weight of a session, the more likely that it will be selected because subtracting its stake weight from r
 	// will result in a value <= 0
 	for i, sess := range s.unknownSessions {
+		addr := addrs[i]
 		// If we could not fetch the stake weight for addrs[i] then its stake weight defaults to 0
-		r -= stakes[addrs[i]]
+		// The stake weight for each session is the stake weight of addrs[i] divided by the number of sessions
+		// that addrs[i] is associated with
+		r -= (stakes[addr] / int64(addrMap[addr]))
 
 		if r <= 0 {
 			s.removeUnknownSession(i)
